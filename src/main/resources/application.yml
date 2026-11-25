@@ -1,0 +1,42 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: berth-coordination
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:ccdev}
+    username: ${DB_USER:ccdev}
+    password: ${DB_PASSWORD:ccdev}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      fail-fast: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    time-zone: Asia/Shanghai
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+
+app:
+  planning:
+    # true = 调度暂存时即对泊位/引航/拖轮/岸桥加 TENTATIVE 占用（带 TTL）
+    # false = 只展示候选，确认时才原子锁定全套资源
+    hold-on-stage: ${HOLD_ON_STAGE:true}
+    default-hold-ttl-seconds: ${HOLD_TTL_SECONDS:120}
+    candidate-step-minutes: 15
+    # ETA 窗口结束后最多向未来搜索多少分钟的等潮/等资源备选
+    max-wait-minutes: 960
+  replay:
+    hold-ttl-seconds: 3

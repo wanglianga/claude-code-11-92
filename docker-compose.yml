@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:18
+    container_name: port-berth-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-berth}
+      POSTGRES_USER: ${DB_USER:-berth}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-berth123}
+      TZ: Asia/Shanghai
+    ports:
+      # 宿主 5433 -> 容器 5432，避免与本机已装 PostgreSQL 的 5432 冲突
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-berth} -d ${DB_NAME:-berth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: port-berth-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-berth}
+      DB_USER: ${DB_USER:-berth}
+      DB_PASSWORD: ${DB_PASSWORD:-berth123}
+      HOLD_ON_STAGE: "true"
+      HOLD_TTL_SECONDS: "120"
+      TZ: Asia/Shanghai
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

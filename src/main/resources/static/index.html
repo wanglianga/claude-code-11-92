@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>港口靠泊协同服务 · Berth Coordination</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<!-- 登录页 -->
+<div id="login-view" class="login-wrap hidden">
+  <div class="login-card">
+    <div class="brand">
+      <div class="logo">⚓</div>
+      <h1>港口靠泊协同服务</h1>
+      <p class="sub">船代申报 · 调度排泊 · 资源暂留/原子确认 · 班组协同 · 扰动重排</p>
+    </div>
+    <label>用户名</label>
+    <input id="login-username" placeholder="dispatch" value="dispatch" />
+    <label>密码</label>
+    <input id="login-password" type="password" placeholder="dispatch123" value="dispatch123" />
+    <button class="btn primary block" onclick="doLogin()">登 录</button>
+    <div class="accounts">
+      <p>测试账号（点击填充）：</p>
+      <div id="account-chips" class="chips"></div>
+    </div>
+    <p class="api-link"><a href="/swagger-ui.html" target="_blank">📘 Swagger UI / OpenAPI 文档</a></p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app-view" class="hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo-sm">⚓</span>
+      <strong>港口靠泊协同服务</strong>
+      <span class="env-tag">模拟数据 · PostgreSQL 持久化</span>
+    </div>
+    <nav class="tabs">
+      <button data-tab="agent" class="tab active" onclick="switchTab('agent')">① 船代申报</button>
+      <button data-tab="planner" class="tab" onclick="switchTab('planner')">② 调度工作台</button>
+      <button data-tab="team" class="tab" onclick="switchTab('team')">③ 班组看板</button>
+      <button data-tab="sim" class="tab" onclick="switchTab('sim')">④ 模拟与扰动</button>
+      <button data-tab="replay" class="tab" onclick="switchTab('replay')">⑤ 一键回放验证</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="current-user" class="user-badge"></span>
+      <button class="btn tiny" onclick="logout()">退出</button>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- ① 船代 -->
+    <section id="tab-agent" class="tab-panel active">
+      <div class="grid two-col">
+        <div class="card">
+          <h2>提交船次 / 新建申报</h2>
+          <form id="voyage-form" onsubmit="return submitVoyage(event)">
+            <div class="form-grid">
+              <label>船舶
+                <select id="f-ship" required></select>
+              </label>
+              <label>船次号（留空自动生成）
+                <input id="f-no" placeholder="VOY-XXXX" />
+              </label>
+              <label>ETA 开始
+                <input id="f-eta-start" type="datetime-local" required />
+              </label>
+              <label>ETA 结束
+                <input id="f-eta-end" type="datetime-local" required />
+              </label>
+              <label>作业时长（分钟）
+                <input id="f-duration" type="number" value="120" min="10" step="10" />
+              </label>
+              <label>所需岸桥数
+                <input id="f-cranes" type="number" value="2" min="0" max="4" />
+              </label>
+              <label class="span2">备注
+                <input id="f-remark" placeholder="货类、特殊要求等" />
+              </label>
+            </div>
+            <button class="btn primary" type="submit">提交船次</button>
+          </form>
+          <p class="hint">船舶的船长/吃水/货类由模拟船舶台账自动带出。</p>
+        </div>
+
+        <div class="card">
+          <h2>船次列表</h2>
+          <div id="voyage-list" class="voyage-list"></div>
+        </div>
+      </div>
+
+      <div id="agent-detail"></div>
+    </section>
+
+    <!-- ② 调度 -->
+    <section id="tab-planner" class="tab-panel">
+      <div class="card">
+        <div class="row-between">
+          <h2>调度工作台</h2>
+          <div class="row gap">
+            <select id="planner-voyage" style="min-width:320px" onchange="renderPlannerDetail()"></select>
+            <button class="btn primary" onclick="generateCandidates()">生成/刷新候选计划</button>
+          </div>
+        </div>
+        <div id="planner-detail"><p class="hint">请选择船次并生成候选。</p></div>
+      </div>
+    </section>
+
+    <!-- ③ 班组 -->
+    <section id="tab-team" class="tab-panel">
+      <div class="row-between">
+        <h2>现场班组看板 <span class="hint">（仅显示已确认计划）</span></h2>
+        <div class="row gap">
+          <label class="hint"><input type="checkbox" id="team-auto" checked onchange="toggleTeamTimer()" /> 5 秒自动刷新</label>
+          <button class="btn" onclick="loadBoard()">立即刷新</button>
+        </div>
+      </div>
+      <div id="team-board"></div>
+    </section>
+
+    <!-- ④ 模拟与扰动 -->
+    <section id="tab-sim" class="tab-panel">
+      <div class="grid two-col">
+        <div class="card">
+          <h2>潮汐模拟输入（30 分钟一档）</h2>
+          <p class="hint">直接修订任意时段水位，随后可到调度页/下方对已确认计划做影响分析与重排。</p>
+          <div id="tide-table" class="tide-scroll"></div>
+        </div>
+        <div>
+          <div class="card">
+            <h2>岸桥设备故障模拟</h2>
+            <div class="form-grid">
+              <label>岸桥<select id="fault-crane"></select></label>
+              <label>原因<input id="fault-reason" value="模拟电控故障" /></label>
+              <label>开始<input id="fault-start" type="datetime-local" /></label>
+              <label>结束<input id="fault-end" type="datetime-local" /></label>
+            </div>
+            <button class="btn warn" onclick="submitFault()">插入故障窗口并分析</button>
+          </div>
+          <div class="card">
+            <h2>扰动与影响记录</h2>
+            <button class="btn tiny" onclick="loadDisruptions()">刷新</button>
+            <div id="disruption-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑤ 回放 -->
+    <section id="tab-replay" class="tab-panel">
+      <div class="card">
+        <h2>固定样例一键回放</h2>
+        <p class="hint">
+          每次回放都会把数据库重置为题目样例：B1 在 20:00 是唯一满足深水吃水的窗口，
+          该时段只有 PILOT-1 与 TUG-1 适配；VOY-A ETA 19:30–20:30，VOY-B 已提交 20:00 靠泊。
+          回放真实调用暂存 TTL、DB 触发器原子锁与重排逻辑，约需 10 秒。
+        </p>
+        <div class="row gap wrap">
+          <button class="btn primary big" id="btn-orderings" onclick="runReplay('orderings')">▶ 回放三种顺序 + 并发/策略对照</button>
+          <button class="btn warn big" id="btn-disruptions" onclick="runReplay('disruptions')">▶ 回放潮汐/岸桥扰动</button>
+          <button class="btn success big" id="btn-full" onclick="runReplay('full')">▶ 完整回放</button>
+          <button class="btn danger" onclick="resetScenario()">重置样例数据</button>
+        </div>
+        <div id="replay-summary"></div>
+        <div id="replay-result"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<div id="modal-mask" class="modal-mask hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
